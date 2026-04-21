@@ -87,9 +87,11 @@ export default async function handler(req, res) {
       return res.status(r.status).json({ error: '이미지 생성에 실패했어요', detail: data });
     }
 
-    const image = data?.data?.[0]?.b64_json || '';
-    if (!image) return res.status(500).json({ error: '이미지 데이터가 비어있어요', detail: data });
+    const b64 = data?.data?.[0]?.b64_json || '';
+    if (!b64) return res.status(500).json({ error: '이미지 데이터가 비어있어요', detail: data });
 
+    // 프론트엔드가 <img src="..."> 에 바로 꽂을 수 있도록 data URL 형태로 돌려줌
+    const image = `data:image/png;base64,${b64}`;
     return res.status(200).json({ image });
   } catch (err) {
     return res.status(500).json({ error: '이미지 생성에 실패했어요', detail: String(err?.message || err) });
