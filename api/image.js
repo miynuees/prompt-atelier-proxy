@@ -73,12 +73,13 @@ export default async function handler(req, res) {
         'Authorization': `Bearer ${openaiKey}`,
       },
       body: JSON.stringify({
-        model: 'dall-e-3',
+        // gpt-image-1: ChatGPT에 내장된 새 이미지 모델. DALL·E 3보다 담백·자연광 경향이 강함.
+        model: 'gpt-image-1',
         prompt: finalPrompt,
         n: 1,
         size: '1024x1024',
-        quality: 'standard',
-        response_format: 'b64_json',
+        quality: 'medium',
+        // gpt-image-1은 항상 b64로만 응답 — response_format 지정하지 않음
       }),
     });
 
