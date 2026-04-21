@@ -57,6 +57,32 @@ ${intent || '(비어 있음)'}
 - 모든 시각 축 순회 / 체크리스트 훑기
 - 감정 과잉, 시적 수사, 과한 정중함`;
 
+// 대화가 끝난 후 구조화된 정리를 만드는 모드
+const SUMMARIZE_SYSTEM_PROMPT = `당신은 학생이 방금 끝낸 대화를 돌아볼 수 있게 **구조화해서 정리**해주는 역할입니다. 단순 요약이 아니라, 대화 속에서 등장한 **주요 줄기들과 진전된 지점들**을 학생 중심으로 보여주세요.
+
+# 결과 구조 (참고 가이드 — 대화에 맞게 섹션 개수·이름 조정해도 됨)
+몇 개의 굵은 제목 섹션으로 나눠서 정리. 각 섹션 안에 2~4개 불릿. 예시 틀:
+
+## 🌟 네가 강조한 것 / 가장 힘주어 말한 지점
+- ...
+
+## 🎨 조형적으로 깊어진 방향
+- ...
+
+## 🫀 너만의 앵커 / 은유·나만 아는 것이 대화에서 어떻게 살아났는지
+- ...
+
+## 💭 아직 고민 중인 것 / 최종 프롬프트에서 더 다듬으면 좋을 것
+- ...
+
+# 원칙
+- **학생이 실제로 한 말의 표현**을 최대한 살려줘요. 학생 말은 "따옴표"로 인용.
+- 단순 정보 나열 X — 대화의 **흐름과 발견**을 보여주기
+- 마크다운 **굵기**·헤딩 활용해 가독성 ↑
+- 해요체 · 담백한 톤, 감정 수사 지양
+- 총 분량은 중간 정도 (너무 짧지 않되 한 화면에 보이는 정도)
+- 학생이 이 정리를 읽고 **최종 프롬프트를 다듬는 데** 바로 쓸 수 있게`;
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -65,13 +91,32 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const { context = {}, dialogue = [] } = req.body || {};
+    const { context = {}, dialogue = [], mode = 'chat' } = req.body || {};
     if (!Array.isArray(dialogue) || dialogue.length === 0) {
       return res.status(400).json({ error: 'dialogue가 비었어요' });
     }
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY 환경변수가 설정되지 않았어요' });
+
+    // 모드별 시스템 프롬프트 + 메시지 구성
+    let systemPrompt, messages;
+    if (mode === 'summarize') {
+      // summarize 모드: 대화 전체를 하나의 user 메시지로 전달
+      const transcript = dialogue
+        .filter(m => !m._hidden)
+        .map(m => `[${m.role === 'user' ? '학생' : '선생님'}] ${m.content}`)
+        .join('\n\n');
+      systemPrompt = SUMMARIZE_SYSTEM_PROMPT;
+      messages = [{
+        role: 'user',
+        content: `아래는 학생이 방금 끝낸 대화예요. 이 대화를 위 가이드대로 구조화해서 정리해주세요.\n\n━━━ 학생 맥락 ━━━\n${JSON.stringify(context, null, 2)}\n\n━━━ 대화 전체 ━━━\n${transcript}`,
+      }];
+    } else {
+      // 일반 대화 모드
+      systemPrompt = SYSTEM_PROMPT(context);
+      messages = dialogue.map(m => ({ role: m.role, content: m.content }));
+    }
 
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -82,9 +127,9 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
-        max_tokens: 1024,
-        system: SYSTEM_PROMPT(context),
-        messages: dialogue.map(m => ({ role: m.role, content: m.content })),
+        max_tokens: mode === 'summarize' ? 2048 : 1024,
+        system: systemPrompt,
+        messages,
       }),
     });
 
